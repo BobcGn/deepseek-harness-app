@@ -1,0 +1,31 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "version": "0.1.0",
+  "description": "Electron desktop application shell for DeepSeek Harness.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/main.js",
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "dev": "electron .",
+    "prepare-runtime": "node scripts/prepare-runtime.mjs",
+    "pack": "pnpm --workspace-root run build && pnpm run prepare-runtime && node scripts/build-artifacts.mjs --dir",
+    "dist": "pnpm --workspace-root run build && pnpm run prepare-runtime && node scripts/build-artifacts.mjs"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "tsdown": "^0.16.7",
+    "typescript": "^6.0.3"
+  }
+}

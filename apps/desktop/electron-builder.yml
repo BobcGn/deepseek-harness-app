@@ -1,0 +1,45 @@
+appId: ai.deepseek.harness.desktop
+productName: DeepSeek Harness
+copyright: Copyright © 2026 DeepSeek AI
+
+directories:
+  output: dist
+
+files:
+  - package.json
+  - lib/**
+  - README.md
+  - README.zh.md
+
+asar: true
+compression: maximum
+npmRebuild: false
+nodeGypRebuild: false
+afterPack: scripts/after-pack.cjs
+
+publish: null
+
+mac:
+  category: public.app-category.developer-tools
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  identity: null
+  target:
+    - dmg
+    - zip
+
+dmg:
+  artifactName: DeepSeek-Harness-${version}-macOS-${arch}.${ext}
+
+win:
+  target:
+    - nsis
+    - zip
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: DeepSeek-Harness-${version}-Windows-${arch}-Setup.${ext}
+
+artifactName: DeepSeek-Harness-${version}-${os}-${arch}.${ext}
