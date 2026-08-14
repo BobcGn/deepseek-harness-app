@@ -14,6 +14,8 @@ Status: implemented
 
 Electron Builder 默认使用 normal compression。仅在 Windows 上，包装脚本传入 `-c.compression=store`，让必需的 zip 产物只打包而不执行高成本 archive compression。NSIS 安装程序和 zip 仍然都是 Windows 输出集合的一部分。预览产物上传路径只包含可分发文件，不包含 unpacked 中间应用目录。
 
+Electron 的 `afterPack` hook 在复制 runtime 后，会从 packaged application 目录中移除断开的符号链接。为支持旧 pnpm 链接而复制的 vendor 包会排除自身的 `node_modules`，因为这些开发期链接可能指向 packaged application 之外，并导致 7zip 在枚举 archive 输入时失败。
+
 ## Alternatives considered
 
 **提高 Windows job 超时时间。** 这可能让慢速 run 通过，但会让 release lane 继续不可预测，并掩盖打包体积问题。
@@ -30,3 +32,4 @@ Electron Builder 默认使用 normal compression。仅在 Windows 上，包装�
 - CI 日志会在 Electron Builder 运行前包含 runtime 体积证据。
 - 桌面 runtime 仍以 pnpm deploy 为事实来源，并且只裁剪运行时不会执行的文件。
 - 其他操作系统的平台可选包不会进入 packaged app，因此未来跨平台 native dependency 必须使用准确的平台 token 命名，或者更新 pruner。
+- 断链清理是打包步骤，而不是 runtime resolver；必需依赖仍必须通过已部署 runtime 或显式复制的 vendor 包存在。

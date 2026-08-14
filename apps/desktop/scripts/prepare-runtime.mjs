@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -122,8 +122,9 @@ function pruneTree(root, removed) {
   const entries = readdirSync(root, { withFileTypes: true })
   for (const entry of entries) {
     const path = join(root, entry.name)
-    if (entry.isSymbolicLink()) continue
-    if (entry.isDirectory()) {
+    const stat = lstatSync(path)
+    if (stat.isSymbolicLink()) continue
+    if (stat.isDirectory()) {
       if (shouldPruneDirectory(entry.name)) {
         removeDirectory(path, removed)
         continue
@@ -131,7 +132,7 @@ function pruneTree(root, removed) {
       pruneTree(path, removed)
       continue
     }
-    if (entry.isFile() && shouldPruneFile(entry.name)) removeFile(path, removed)
+    if (stat.isFile() && shouldPruneFile(entry.name)) removeFile(path, removed)
   }
 }
 
@@ -139,11 +140,21 @@ function pruneBrokenSymlinks(root, removed) {
   const entries = readdirSync(root, { withFileTypes: true })
   for (const entry of entries) {
     const path = join(root, entry.name)
-    if (entry.isSymbolicLink()) {
-      if (!existsSync(path)) removeSymlink(path, removed)
+    const stat = lstatSync(path)
+    if (stat.isSymbolicLink()) {
+      if (!pointsToExistingTarget(path)) removeSymlink(path, removed)
       continue
     }
-    if (entry.isDirectory()) pruneBrokenSymlinks(path, removed)
+    if (stat.isDirectory()) pruneBrokenSymlinks(path, removed)
+  }
+}
+
+function pointsToExistingTarget(path) {
+  try {
+    statSync(path)
+    return true
+  } catch {
+    return false
   }
 }
 

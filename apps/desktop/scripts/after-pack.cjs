@@ -1,4 +1,4 @@
-const { cpSync, existsSync, rmSync } = require('node:fs')
+const { cpSync, existsSync, lstatSync, readdirSync, rmSync, statSync, unlinkSync } = require('node:fs')
 const { join } = require('node:path')
 
 exports.default = async function afterPack(context) {
@@ -21,6 +21,41 @@ exports.default = async function afterPack(context) {
     const vendorSource = join(repositoryRoot, 'vendor', name)
     const vendorTarget = join(appRoot, 'vendor', name)
     rmSync(vendorTarget, { recursive: true, force: true })
-    cpSync(vendorSource, vendorTarget, { recursive: true, dereference: false, verbatimSymlinks: true })
+    cpSync(vendorSource, vendorTarget, {
+      recursive: true,
+      dereference: false,
+      verbatimSymlinks: true,
+      filter: (source) => source === vendorSource || !source.split(/[\\/]/u).includes('node_modules'),
+    })
+  }
+
+  const prunedSymlinks = pruneBrokenSymlinks(appRoot)
+  if (prunedSymlinks > 0) {
+    console.log(`Pruned ${prunedSymlinks} broken symlinks from packaged desktop app`)
+  }
+}
+
+function pruneBrokenSymlinks(root) {
+  let removed = 0
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    const stat = lstatSync(path)
+    if (stat.isSymbolicLink()) {
+      if (pointsToExistingTarget(path)) continue
+      unlinkSync(path)
+      removed += 1
+      continue
+    }
+    if (stat.isDirectory()) removed += pruneBrokenSymlinks(path)
+  }
+  return removed
+}
+
+function pointsToExistingTarget(path) {
+  try {
+    statSync(path)
+    return true
+  } catch {
+    return false
   }
 }
