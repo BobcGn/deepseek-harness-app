@@ -1,0 +1,72 @@
+name: Desktop preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  package:
+    name: Package desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            artifact: DeepSeek-Harness-macOS-preview
+          - name: Windows
+            os: windows-latest
+            artifact: DeepSeek-Harness-Windows-preview
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop entries
+        run: pnpm --filter @deepseek-ai/dsh-desktop run build
+
+      - name: Package desktop artifacts
+        run: pnpm --filter @deepseek-ai/dsh-desktop run dist
+
+      - name: Add unsigned macOS install note
+        if: runner.os == 'macOS'
+        run: |
+          cat > apps/desktop/dist/INSTALL-macOS-unsigned.md <<'EOF'
+          # Unsigned macOS Preview
+
+          These DeepSeek Harness macOS artifacts are unsigned preview builds. If macOS blocks the app after installation, remove Gatekeeper quarantine manually:
+
+          ```sh
+          xattr -r -d com.apple.quarantine /Applications/"DeepSeek Harness".app
+          ```
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: apps/desktop/dist/**
+          if-no-files-found: error
+          retention-days: 14
