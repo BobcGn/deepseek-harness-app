@@ -11,7 +11,13 @@ const runtimeRoot = resolve(packageRoot, 'runtime')
 
 rmSync(runtimeRoot, { recursive: true, force: true })
 
-const result = spawnSync('pnpm', [
+const pnpmExecPath = process.env.npm_execpath
+const pnpmCommand = pnpmExecPath === undefined || pnpmExecPath === ''
+  ? { command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args: [] }
+  : { command: process.execPath, args: [pnpmExecPath] }
+
+const result = spawnSync(pnpmCommand.command, [
+  ...pnpmCommand.args,
   '--filter',
   '@deepseek-ai/dsh',
   'deploy',
