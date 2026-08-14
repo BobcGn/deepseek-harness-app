@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +47,8 @@ for (const packageRoot of workspacePackageRoots()) {
   })
 }
 
+pruneRuntime(runtimeRoot)
+
 function workspacePackageRoots() {
   return [
     ...twoLevelPackageRoots(join(repositoryRoot, 'packages')),
@@ -69,4 +71,151 @@ function oneLevelPackageRoots(root) {
   return readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => join(root, entry.name))
+}
+
+function pruneRuntime(root) {
+  const before = measureTree(root)
+  const removed = {
+    directories: 0,
+    files: 0,
+    symlinks: 0,
+  }
+
+  pruneUnsupportedPlatformPackages(join(root, 'node_modules/.pnpm'), removed)
+  pruneTree(root, removed)
+  pruneBrokenSymlinks(root, removed)
+
+  const after = measureTree(root)
+  process.stdout.write(
+    `Pruned desktop runtime: ${formatBytes(before.bytes)} -> ${formatBytes(after.bytes)}, ` +
+    `${before.files} -> ${after.files} files, removed ${removed.directories} directories, ` +
+    `${removed.files} files, ${removed.symlinks} broken symlinks\n`,
+  )
+}
+
+function pruneUnsupportedPlatformPackages(pnpmStoreRoot, removed) {
+  if (!existsSync(pnpmStoreRoot)) return
+  for (const entry of readdirSync(pnpmStoreRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === 'node_modules') continue
+    if (!isUnsupportedPlatformPackage(entry.name)) continue
+    removeDirectory(join(pnpmStoreRoot, entry.name), removed)
+  }
+}
+
+function isUnsupportedPlatformPackage(name) {
+  const unsupportedOsTokens = {
+    win32: ['darwin', 'linux'],
+    darwin: ['win32', 'windows', 'linux'],
+    linux: ['darwin', 'win32', 'windows'],
+  }[process.platform] ?? []
+  if (unsupportedOsTokens.some((token) => name.includes(token))) return true
+
+  const unsupportedArchTokens = process.arch === 'arm64'
+    ? ['x64', 'ia32']
+    : process.arch === 'x64'
+      ? ['arm64', 'ia32']
+      : []
+  return unsupportedArchTokens.some((token) => name.includes(token))
+}
+
+function pruneTree(root, removed) {
+  const entries = readdirSync(root, { withFileTypes: true })
+  for (const entry of entries) {
+    const path = join(root, entry.name)
+    if (entry.isSymbolicLink()) continue
+    if (entry.isDirectory()) {
+      if (shouldPruneDirectory(entry.name)) {
+        removeDirectory(path, removed)
+        continue
+      }
+      pruneTree(path, removed)
+      continue
+    }
+    if (entry.isFile() && shouldPruneFile(entry.name)) removeFile(path, removed)
+  }
+}
+
+function pruneBrokenSymlinks(root, removed) {
+  const entries = readdirSync(root, { withFileTypes: true })
+  for (const entry of entries) {
+    const path = join(root, entry.name)
+    if (entry.isSymbolicLink()) {
+      if (!existsSync(path)) removeSymlink(path, removed)
+      continue
+    }
+    if (entry.isDirectory()) pruneBrokenSymlinks(path, removed)
+  }
+}
+
+function shouldPruneDirectory(name) {
+  return [
+    '.cache',
+    '.changeset',
+    '.github',
+    '.turbo',
+    '.vite',
+    '.vitest',
+    '__tests__',
+    'benchmark',
+    'benchmarks',
+    'coverage',
+    'doc',
+    'docs',
+    'example',
+    'examples',
+    'test',
+    'tests',
+  ].includes(name)
+}
+
+function shouldPruneFile(name) {
+  return name.endsWith('.d.ts') ||
+    name.endsWith('.d.ts.map') ||
+    name.endsWith('.map') ||
+    name.endsWith('.md') ||
+    name.endsWith('.tsbuildinfo')
+}
+
+function removeDirectory(path, removed) {
+  rmSync(path, { recursive: true, force: true })
+  removed.directories += 1
+}
+
+function removeFile(path, removed) {
+  rmSync(path, { force: true })
+  removed.files += 1
+}
+
+function removeSymlink(path, removed) {
+  unlinkSync(path)
+  removed.symlinks += 1
+}
+
+function measureTree(root) {
+  const result = { bytes: 0, files: 0 }
+  if (!existsSync(root)) return result
+  measureTreeInto(root, result)
+  return result
+}
+
+function measureTreeInto(root, result) {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    const stat = lstatSync(path)
+    if (entry.isDirectory()) {
+      measureTreeInto(path, result)
+      continue
+    }
+    if (entry.isFile()) result.files += 1
+    result.bytes += stat.size
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  const kib = bytes / 1024
+  if (kib < 1024) return `${kib.toFixed(1)} KiB`
+  const mib = kib / 1024
+  if (mib < 1024) return `${mib.toFixed(1)} MiB`
+  return `${(mib / 1024).toFixed(1)} GiB`
 }
