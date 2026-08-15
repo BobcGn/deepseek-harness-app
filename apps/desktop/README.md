@@ -36,6 +36,10 @@ pnpm --filter @deepseek-ai/dsh-desktop run dist
 
 The current shell opens an Electron window with context isolation enabled, renderer Node integration disabled, and a minimal preload bridge. Development mode launches the existing Web profile from the source checkout on an OS-assigned loopback port. Packaged preview builds launch a deployed Harness runtime from Electron resources, then load the hidden loopback Web UI. The next transport milestone is to load the existing Web frontend over `file://` with an IPC-backed API client.
 
+## Credentials From the User Shell
+
+macOS GUI launches do not read shell startup files, so a key the user exports for `dsh web` (for example `export DEEPSEEK_API_KEY=…` in `~/.zprofile`) is absent from the app's inherited environment. The desktop shell parses `export NAME=value` lines from the usual shell configs (`.zshenv`, `.zprofile`, `.zshrc`, `.bash_profile`, `.bashrc`, `.profile`) and injects the missing `DEEPSEEK_*` and `DSH_*` variables into the Harness runtime. Values already present in the app's environment (terminal launches, `launchctl setenv`) keep precedence. Other providers can store a key from the Models settings page, which writes the shared `~/.dsh/.credentials.yaml` document.
+
 ## Preview Packaging
 
 The desktop preview workflow is manual-only and uploads GitHub Actions artifacts instead of publishing a release. macOS artifacts target unsigned `dmg` and `zip` outputs. Windows artifacts target NSIS `exe` and `zip` outputs.

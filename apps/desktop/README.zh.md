@@ -36,6 +36,10 @@ pnpm --filter @deepseek-ai/dsh-desktop run dist
 
 当前外壳会打开一个 Electron 窗口，启用 context isolation，禁用 renderer Node integration，并提供一个最小 preload bridge。开发模式会从源码 checkout 在操作系统分配的 loopback 端口上启动现有 Web profile。打包预览构建会从 Electron resources 中部署好的 Harness runtime 启动，然后加载隐藏 loopback Web UI。下一项 transport 里程碑是通过带 IPC API 客户端的 `file://` 加载现有 Web 前端。
 
+## 从用户 Shell 读取凭证
+
+macOS 的 GUI 启动不会读取 shell 启动文件，因此用户为 `dsh web` 导出的 key（例如 `~/.zprofile` 中的 `export DEEPSEEK_API_KEY=…`）不会出现在应用的继承环境中。桌面外壳会解析常用 shell 配置（`.zshenv`、`.zprofile`、`.zshrc`、`.bash_profile`、`.bashrc`、`.profile`）中的 `export NAME=value` 行，并将缺失的 `DEEPSEEK_*` 与 `DSH_*` 变量注入 Harness runtime。应用中已存在的值（终端启动、`launchctl setenv`）保持优先。其他 provider 可以在 Models 设置页存储 key，该页面会写入共享的 `~/.dsh/.credentials.yaml` 文档。
+
 ## 预览打包
 
 桌面预览 workflow 只支持手动触发，并上传 GitHub Actions artifacts，不发布 release。macOS 产物目标是未签名的 `dmg` 和 `zip`。Windows 产物目标是 NSIS `exe` 和 `zip`。
