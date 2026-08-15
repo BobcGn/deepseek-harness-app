@@ -120,12 +120,17 @@ function isUnsupportedPlatformPackage(name) {
 
 function pruneTree(root, removed) {
   const entries = readdirSync(root, { withFileTypes: true })
+  // The parent holding package.json is a package root: only there do the
+  // repo's own docs/tests/examples/benchmark dirs live. Published packages
+  // ship the same names inside their runtime payload (yaml ships dist/doc
+  // with modules its dist requires), so those must survive.
+  const atPackageRoot = existsSync(join(root, 'package.json'))
   for (const entry of entries) {
     const path = join(root, entry.name)
     const stat = lstatSync(path)
     if (stat.isSymbolicLink()) continue
     if (stat.isDirectory()) {
-      if (shouldPruneDirectory(entry.name)) {
+      if (shouldPruneDirectory(entry.name, atPackageRoot)) {
         removeDirectory(path, removed)
         continue
       }
@@ -158,24 +163,14 @@ function pointsToExistingTarget(path) {
   }
 }
 
-function shouldPruneDirectory(name) {
-  return [
-    '.cache',
-    '.changeset',
-    '.github',
-    '.turbo',
-    '.vite',
-    '.vitest',
-    '__tests__',
-    'benchmark',
-    'benchmarks',
-    'coverage',
-    'doc',
-    'docs',
-    'example',
-    'examples',
-    'test',
-    'tests',
+function shouldPruneDirectory(name, atPackageRoot) {
+  const devMeta = ['.cache', '.changeset', '.github', '.turbo', '.vite', '.vitest', 'coverage']
+  if (devMeta.includes(name)) return true
+  // These names also appear inside published package payloads (yaml/dist/doc,
+  // mermaid/dist/tests), so prune them only at a package root — the repo's own
+  // docs/tests/examples/benchmark dirs — never inside a package's dist/lib.
+  return atPackageRoot && [
+    '__tests__', 'benchmark', 'benchmarks', 'doc', 'docs', 'example', 'examples', 'test', 'tests',
   ].includes(name)
 }
 

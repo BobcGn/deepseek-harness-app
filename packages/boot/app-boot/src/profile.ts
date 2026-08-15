@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -315,14 +315,18 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
  * Resolve a package's root directory from one anchor without depending on the
  * package exporting `./package.json` (`require.resolve` would need that):
  * probe the require resolution paths for a directory holding the named
- * manifest. This is Node's own node_modules lookup order, so the result
- * matches what the Loader would import from the same anchor, and
+ * manifest. The anchor is realpathed first because `resolve.paths` walks the
+ * anchor's lexical parent chain: a deployed runtime's top-level entries are
+ * symlinks into the pnpm store, whose lexical ancestors never include the
+ * store's hoist root (`node_modules/.pnpm/node_modules`) where transitive
+ * in-box packages live. Realpathing matches Node's own symlink-following load
+ * resolution, so the BFS can descend into store-resident dependencies and
  * `existsSync` follows the symlinks pnpm's isolated layout uses.
  */
 function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
   // resolve.paths returns null only for builtins, which no bundle name is.
   /* v8 ignore next */
-  for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
+  for (const searchPath of createRequire(realpathSync(anchor)).resolve.paths(packageName) ?? []) {
     const candidate = join(searchPath, packageName)
     if (existsSync(join(candidate, 'package.json'))) return candidate
   }

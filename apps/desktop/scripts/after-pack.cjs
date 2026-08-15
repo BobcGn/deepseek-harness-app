@@ -1,4 +1,4 @@
-const { cpSync, existsSync, lstatSync, readdirSync, rmSync, statSync, unlinkSync } = require('node:fs')
+const { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync } = require('node:fs')
 const { join } = require('node:path')
 
 exports.default = async function afterPack(context) {
@@ -27,6 +27,20 @@ exports.default = async function afterPack(context) {
       verbatimSymlinks: true,
       filter: (source) => source === vendorSource || !source.split(/[\\/]/u).includes('node_modules'),
     })
+  }
+
+  // pnpm's legacy store symlinks resolve the vendored @deepseek-ai/schemastery
+  // and @deepseek-ai/cosmokit copies outside the runtime, at <appRoot>/vendor.
+  // Schemastery's own entry imports @deepseek-ai/cosmokit by bare specifier, so
+  // give the app root the node_modules bridge the workspace root provides in
+  // development; without it that import throws ERR_MODULE_NOT_FOUND and every
+  // schemastery-importing plugin fails to load at boot.
+  const vendorBridge = join(appRoot, 'node_modules', '@deepseek-ai')
+  mkdirSync(vendorBridge, { recursive: true })
+  for (const name of ['cosmokit', 'schemastery']) {
+    const link = join(vendorBridge, name)
+    rmSync(link, { recursive: true, force: true })
+    symlinkSync(join('..', '..', 'vendor', name), link, 'junction')
   }
 
   const prunedSymlinks = pruneBrokenSymlinks(appRoot)

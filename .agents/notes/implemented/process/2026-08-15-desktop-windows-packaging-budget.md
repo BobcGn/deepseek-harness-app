@@ -10,7 +10,7 @@ The desktop preview workflow builds macOS artifacts quickly but the Windows job 
 
 ## Decision
 
-The desktop runtime preparation step prunes release-irrelevant files after `pnpm deploy` and workspace package materialization. The pruning removes unsupported platform package directories from the pnpm virtual store, documentation and test directories, source maps, TypeScript declaration files, markdown files, tsbuildinfo files, and broken symlinks. It reports before and after byte and file counts in CI logs so packaging regressions have visible size evidence.
+The desktop runtime preparation step prunes release-irrelevant files after `pnpm deploy` and workspace package materialization. The pruning removes unsupported platform package directories from the pnpm virtual store, documentation and test directories at package roots (never inside a package's `dist`/`lib` payload), source maps, TypeScript declaration files, markdown files, tsbuildinfo files, and broken symlinks. It reports before and after byte and file counts in CI logs so packaging regressions have visible size evidence.
 
 Electron Builder uses normal compression by default. On Windows only, the wrapper passes `-c.compression=store` so the required zip artifact is packaged without expensive archive compression. The NSIS installer and zip remain part of the Windows output set. Preview artifact upload paths include only distributable files, not unpacked intermediate application directories.
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-15-desktop-windows-packaging-budget.md
-2026-08-15-desktop-windows-packaging-budget.md: e0e4155d71f0d867f187005f8059c7fcab82598f
-2026-08-15-desktop-windows-packaging-budget.zh.md: 60be7cba977ec5dd969eb71f4000b7bc4a45719e
+2026-08-15-desktop-windows-packaging-budget.md: 12363a02f08d3c49422c1da57cbdb065cba7899d
+2026-08-15-desktop-windows-packaging-budget.zh.md: 0151f2b944c626a3ffb4c55314270e1b263b3da9

@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-桌面 runtime 准备步骤在 `pnpm deploy` 和 workspace 包物化后裁剪发行版不需要的文件。裁剪会移除 pnpm virtual store 中不支持当前平台的包目录、文档和测试目录、source map、TypeScript declaration 文件、markdown 文件、tsbuildinfo 文件以及断开的符号链接。它会在 CI 日志中报告裁剪前后的字节数和文件数，让打包回归具备可见的体积证据。
+桌面 runtime 准备步骤在 `pnpm deploy` 和 workspace 包物化后裁剪发行版不需要的文件。裁剪会移除 pnpm virtual store 中不支持当前平台的包目录、包根下的文档和测试目录（绝不触碰包 `dist`/`lib` 载荷内部）、source map、TypeScript declaration 文件、markdown 文件、tsbuildinfo 文件以及断开的符号链接。它会在 CI 日志中报告裁剪前后的字节数和文件数，让打包回归具备可见的体积证据。
 
 Electron Builder 默认使用 normal compression。仅在 Windows 上，包装脚本传入 `-c.compression=store`，让必需的 zip 产物只打包而不执行高成本 archive compression。NSIS 安装程序和 zip 仍然都是 Windows 输出集合的一部分。预览产物上传路径只包含可分发文件，不包含 unpacked 中间应用目录。
 

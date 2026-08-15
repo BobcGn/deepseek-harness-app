@@ -4,7 +4,7 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -113,7 +113,9 @@ describe('resolveBundleDir', () => {
     }))
     writeFileSync(join(dir, 'index.js'), '')
     writeFileSync(join(dir, 'cordis.patch.yml'), '[]\n')
-    expect(resolveBundleDir('t', 'sealed-bundle', anchor, profileDir)).toBe(dir)
+    // Resolution realpaths the anchor (os.tmpdir() is a symlink to /private on
+    // macOS), so the resolved dir carries the realpath spelling of the same location.
+    expect(resolveBundleDir('t', 'sealed-bundle', anchor, profileDir)).toBe(realpathSync(dir))
   })
 })
 
@@ -237,6 +239,38 @@ describe('healProfilesModuleFallback', () => {
     healProfilesModuleFallback(anchor, home)
     const before = readlinkSync(join(fallback, 'dep-of-a'))
     expect(before).toContain('dep-of-a')
+  })
+
+  it('descends through store symlinks to link transitive dependencies', () => {
+    // A deployed runtime's top-level entries are symlinks into the pnpm
+    // store. The store path's ancestor walk reaches the hoist root
+    // (node_modules/.pnpm/node_modules), so a transitive dependency that only
+    // lives there must still be linked; probing the lexical anchor alone would
+    // never enter the store.
+    const root = tmp()
+    const appDir = join(root, 'app')
+    const modules = join(appDir, 'node_modules')
+    const store = join(modules, '.pnpm')
+    const storeScope = join(store, '@deepseek-ai+direct-dep@0.0.0', 'node_modules', '@deepseek-ai')
+    const hoist = join(store, 'node_modules', '@deepseek-ai')
+    mkdirSync(join(storeScope, 'direct-dep'), { recursive: true })
+    mkdirSync(join(hoist, 'transitive'), { recursive: true })
+    writeFileSync(join(storeScope, 'direct-dep', 'package.json'), JSON.stringify({
+      name: 'direct-dep', version: '0.0.0', dependencies: { '@deepseek-ai/transitive': '0.0.0' },
+    }))
+    writeFileSync(join(hoist, 'transitive', 'package.json'), JSON.stringify({ name: 'transitive', version: '0.0.0' }))
+    mkdirSync(join(modules, '@deepseek-ai'), { recursive: true })
+    symlinkSync(join('..', '.pnpm', '@deepseek-ai+direct-dep@0.0.0', 'node_modules', '@deepseek-ai', 'direct-dep'),
+      join(modules, '@deepseek-ai', 'direct-dep'), 'junction')
+    writeFileSync(join(appDir, 'package.json'), JSON.stringify({
+      name: 'dsh-app', dependencies: { '@deepseek-ai/direct-dep': '0.0.0' },
+    }))
+    const home = tmp()
+    healProfilesModuleFallback(join(appDir, 'package.json'), home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    expect(lstatSync(join(fallback, '@deepseek-ai', 'direct-dep')).isSymbolicLink()).toBe(true)
+    expect(lstatSync(join(fallback, '@deepseek-ai', 'transitive')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(fallback, '@deepseek-ai', 'transitive'))).toContain('.pnpm')
   })
 
   it('throws when a fallback entry is a real directory', () => {
