@@ -10,7 +10,8 @@
 
 import { app, BrowserWindow } from 'electron'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -22,6 +23,15 @@ const PACKAGED_RUNTIME_ENTRY = 'lib/bin.js'
 const WEB_READY_PATTERN = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/u
 const STARTUP_TIMEOUT_MS = 30_000
 const SHUTDOWN_TIMEOUT_MS = 5_000
+
+/** Shell startup files whose `export NAME=value` lines a GUI launch does not inherit. */
+const SHELL_ENV_FILES = ['.zshenv', '.zprofile', '.zshrc', '.bash_profile', '.bashrc', '.profile'] as const
+
+/** Environment-name prefixes the desktop shell lifts into the runtime environment. */
+const LIFTED_ENV_PREFIXES = ['DEEPSEEK_', 'DSH_'] as const
+
+/** One `export NAME=value` line, with the value quoted or bare. */
+const EXPORT_LINE = /^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\S+))/u
 
 interface RuntimeLaunch {
   readonly command: string
@@ -136,7 +146,7 @@ function startHarnessRuntime(): Promise<RuntimeHandle> {
   const launch = resolveRuntimeLaunch()
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
-    env: launch.env,
+    env: { ...launch.env, ...shellCredentialEnv() },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
@@ -186,6 +196,35 @@ function startHarnessRuntime(): Promise<RuntimeHandle> {
       finish(new Error(`dsh web exited before reporting a URL: ${detail}`))
     })
   })
+}
+
+/**
+ * macOS GUI launches (Finder or LaunchServices) do not read shell startup
+ * files, so a credential the user exports for `dsh web` is absent from
+ * `process.env`. Parse `export NAME=value` lines from the usual shell configs
+ * and return the missing product variables; values already present in
+ * `process.env` (terminal launches, launchd-set variables) keep precedence.
+ */
+function shellCredentialEnv(): NodeJS.ProcessEnv {
+  const lifted: NodeJS.ProcessEnv = {}
+  for (const filename of SHELL_ENV_FILES) {
+    const file = join(homedir(), filename)
+    if (!existsSync(file)) continue
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/u)) {
+      const match = EXPORT_LINE.exec(line)
+      if (match === null) continue
+      const name = match[1]
+      if (name === undefined) continue
+      const doubleQuoted = match[2]
+      const singleQuoted = match[3]
+      const bare = match[4]
+      if (!LIFTED_ENV_PREFIXES.some(prefix => name.startsWith(prefix))) continue
+      if (process.env[name] !== undefined || lifted[name] !== undefined) continue
+      const value = doubleQuoted ?? singleQuoted ?? bare ?? ''
+      lifted[name] = value.replace(/\\(["\\$`])/gu, '$1')
+    }
+  }
+  return lifted
 }
 
 function resolveRuntimeLaunch(): RuntimeLaunch {
