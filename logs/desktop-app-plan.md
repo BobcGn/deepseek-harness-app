@@ -251,3 +251,9 @@ Do not claim desktop support until packaged artifacts have been opened and the a
 - Verified the generated DMG with `hdiutil imageinfo`.
 - Added a tag-triggered desktop release workflow. Pushing `v*` packages macOS and Windows on native GitHub runners, then creates or updates the matching GitHub Release with the generated installers and archives.
 - Set the desktop wrapper version to `0.1.0` for the first small-scale release artifacts; the bundled Harness runtime remains on the upstream preview version.
+
+### 2026-08-15
+
+- Diagnosed why the desktop app could not read an API key the user exports for `dsh web`: macOS GUI launches (Finder / LaunchServices) do not load shell startup files, so `~/.zprofile`'s `export DEEPSEEK_API_KEY=…` never reaches the Electron main process, and the runtime child inherits nothing. The env pass-through itself (`main.ts` → spawn) was intact; the source was missing.
+- Fixed it in the desktop shell: `main.ts` parses `export NAME=value` lines from the usual shell configs (`.zshenv`, `.zprofile`, `.zshrc`, `.bash_profile`, `.bashrc`, `.profile`) and injects the missing `DEEPSEEK_*` / `DSH_*` variables into the runtime environment. Values already present in `process.env` (terminal launches, `launchctl setenv`) keep precedence; nothing is executed, only parsed.
+- Verified end to end from a Finder-style launch of the packaged app: `credentials.describe` reports `DEEPSEEK_API_KEY configured: true, source: env`, and `llm.models` lists the DeepSeek catalog with no failures.
