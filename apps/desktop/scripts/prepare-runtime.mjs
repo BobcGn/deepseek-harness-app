@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -47,7 +47,83 @@ for (const packageRoot of workspacePackageRoots()) {
   })
 }
 
+// The deployed runtime is a pnpm isolated store: every top-level entry is a
+// symlink into node_modules/.pnpm and packages resolve their transitive
+// dependencies through store links. Windows installers do not preserve
+// symlinks/junctions, so an installed copy loses the whole store graph.
+// Flatten the hoist root (which pnpm fills with every dependency) into real
+// top-level directories and drop the store, so the installed node_modules is
+// self-contained with no symlink to break.
+flattenModules(runtimeRoot)
+
 pruneRuntime(runtimeRoot)
+
+function flattenModules(runtimeRoot) {
+  const modules = join(runtimeRoot, 'node_modules')
+  const hoist = join(modules, '.pnpm', 'node_modules')
+  if (!existsSync(hoist)) return
+  // Remove the deployed top-level entries; every dependency comes from the
+  // hoist root below. .bin holds plain launcher scripts and stays.
+  for (const entry of readdirSync(modules, { withFileTypes: true })) {
+    if (entry.name === '.bin' || entry.name === '.pnpm' || entry.name === '.modules.yaml') continue
+    rmSync(join(modules, entry.name), { recursive: true, force: true })
+  }
+  // Real-copy every hoist-root entry (scoped packages included), following
+  // the store links so the copies are self-contained. cpSync's dereference
+  // does not expand nested links, so materialize them afterwards: a package's
+  // own node_modules pins the exact store version it needs, which the single
+  // top-level copy cannot replace when the graph holds multiple versions.
+  for (const entry of readdirSync(hoist, { withFileTypes: true })) {
+    const source = join(hoist, entry.name)
+    const target = join(modules, entry.name)
+    rmSync(target, { recursive: true, force: true })
+    cpSync(source, target, { recursive: true, dereference: true })
+  }
+  materializeLinks(modules)
+  // The store duplicates the flattened tree; drop it and its metadata.
+  rmSync(join(modules, '.pnpm'), { recursive: true, force: true })
+  rmSync(join(modules, '.modules.yaml'), { force: true })
+  // A deploy may leave an absolute link for the app itself pointing back at
+  // the build checkout; the runtime never resolves itself from node_modules.
+  rmSync(join(modules, '@deepseek-ai', 'dsh'), { recursive: true, force: true })
+}
+
+/** Replace every remaining symlink with a real copy of its target, iteratively. */
+function materializeLinks(root) {
+  const stack = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.pnpm') continue
+      const path = join(dir, entry.name)
+      if (entry.isSymbolicLink()) {
+        let target
+        try {
+          target = realpathSync(path)
+        } catch {
+          // Dangling link (e.g. an optional peer no version satisfies): leave
+          // it for the broken-symlink prune instead of failing the build.
+          continue
+        }
+        rmSync(path, { recursive: true, force: true })
+        // Copy the package payload only: a peer cycle (cordis <-> loader)
+        // would otherwise nest copies forever, and the flat top level already
+        // resolves every dependency after the store is dropped. The store
+        // path itself contains node_modules segments, so judge by the
+        // relative path under the copied root, not the absolute one.
+        cpSync(target, path, {
+          recursive: true,
+          dereference: true,
+          filter: (source) => source === target
+            || !relative(target, source).split(/[\\/]/u).includes('node_modules'),
+        })
+        if (existsSync(path) && lstatSync(path).isDirectory()) stack.push(path)
+      } else if (entry.isDirectory()) {
+        stack.push(path)
+      }
+    }
+  }
+}
 
 function workspacePackageRoots() {
   return [
