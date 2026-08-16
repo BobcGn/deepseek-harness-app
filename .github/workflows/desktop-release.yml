@@ -115,8 +115,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build desktop entries
-        run: pnpm --filter @deepseek-ai/dsh-desktop run build
+      - name: Build workspace
+        # The packaged runtime deploys the whole @deepseek-ai/dsh dependency
+        # graph, whose workspace packages must be built (bin.js ships from
+        # apps/cli); mirror what the dist script builds.
+        run: pnpm --workspace-root run build
 
       - name: Prepare runtime
         run: pnpm --filter @deepseek-ai/dsh-desktop run prepare-runtime
