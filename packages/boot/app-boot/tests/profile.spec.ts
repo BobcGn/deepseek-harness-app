@@ -6,7 +6,7 @@
 
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
@@ -271,6 +271,21 @@ describe('healProfilesModuleFallback', () => {
     expect(lstatSync(join(fallback, '@deepseek-ai', 'direct-dep')).isSymbolicLink()).toBe(true)
     expect(lstatSync(join(fallback, '@deepseek-ai', 'transitive')).isSymbolicLink()).toBe(true)
     expect(readlinkSync(join(fallback, '@deepseek-ai', 'transitive'))).toContain('.pnpm')
+  })
+
+  it('links the whole hoist root so undeclared shipped entries resolve', () => {
+    // A deployed runtime materializes every workspace package in the pnpm
+    // hoist root even when the app manifest never declares it; the heal must
+    // link it so such an entry resolves on a fresh machine.
+    const anchor = stageInstallation({})
+    const hoist = join(dirname(anchor), 'node_modules', '.pnpm', 'node_modules', '@deepseek-ai')
+    mkdirSync(join(hoist, 'undeclared-plugin'), { recursive: true })
+    writeFileSync(join(hoist, 'undeclared-plugin', 'package.json'), JSON.stringify({ name: 'undeclared-plugin', version: '0.0.0' }))
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    expect(lstatSync(join(fallback, '@deepseek-ai', 'undeclared-plugin')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(fallback, '@deepseek-ai', 'undeclared-plugin'))).toContain('.pnpm')
   })
 
   it('throws when a fallback entry is a real directory', () => {

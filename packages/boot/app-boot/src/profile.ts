@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -214,6 +214,12 @@ function ensureSymlink(link: string, target: string): void {
  * reaches only through its Service Provider packages. Symlinked packages
  * resolve their own dependencies from their real directories (Node's default
  * symlink-following), so each package needs only its one flat link.
+ * A deployed runtime additionally materializes every workspace package in its
+ * pnpm hoist root (`node_modules/.pnpm/node_modules`), so in-box plugins the
+ * manifest closure does not reach — a bundle entry the app never declared, or
+ * one still sitting in `devDependencies` — are linked wholesale from there;
+ * a fresh machine then resolves any shipped entry without depending on
+ * manifest declaration completeness or store-symlink following.
  * Idempotent: correct links are kept and moved installations are
  * re-pointed; a stale link to a vanished package stays until its name is
  * reused (dangling links are invisible to resolution).
@@ -245,6 +251,20 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
       links.set(dep, dir)
       const manifestPath = join(dir, 'package.json')
       queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
+    }
+  }
+  // Wholesale hoist-root coverage: every shipped workspace package lives at
+  // node_modules/.pnpm/node_modules/@deepseek-ai in a deployed runtime, whether
+  // or not the manifest closure reaches it. Link the whole set so a bundle
+  // entry that was never declared (or still sits in devDependencies) still
+  // resolves on a fresh machine. A flat npm install has no hoist root.
+  const hoistRoot = join(dirname(installAnchor), 'node_modules', '.pnpm', 'node_modules', '@deepseek-ai')
+  if (existsSync(hoistRoot)) {
+    for (const entry of readdirSync(hoistRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const packageName = `@deepseek-ai/${entry.name}`
+      if (links.has(packageName)) continue
+      links.set(packageName, join(hoistRoot, entry.name))
     }
   }
   for (const [packageName, target] of links) {

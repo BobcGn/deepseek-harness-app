@@ -84,10 +84,67 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  smoke:
+    name: Boot smoke (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    needs: package
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop entries
+        run: pnpm --filter @deepseek-ai/dsh-desktop run build
+
+      - name: Prepare runtime
+        run: pnpm --filter @deepseek-ai/dsh-desktop run prepare-runtime
+
+      - name: Boot the web profile on a fresh DSH_HOME
+        shell: bash
+        run: |
+          export DSH_HOME="$(mktemp -d)"
+          cd apps/desktop/runtime
+          node --expose-internals lib/bin.js web --port 0 > boot.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 90); do
+            if grep -q 'dsh web: http://127.0.0.1:' boot.log; then
+              kill "$PID" 2>/dev/null || true
+              echo "web profile booted successfully on ${{ matrix.name }}"
+              exit 0
+            fi
+            sleep 1
+          done
+          kill "$PID" 2>/dev/null || true
+          cat boot.log
+          echo "web profile did not report a URL within 90s on ${{ matrix.name }}"
+          exit 1
+
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: package
+    needs: [package, smoke]
     permissions:
       contents: write
 
